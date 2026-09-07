@@ -521,9 +521,7 @@ Preciso conseguir alterar/adicionar perguntas facilmente depois.
 
 # TECNOLOGIA
 
-Use uma stack web moderna adequada ao Lovable.
-
-Pode usar React + TypeScript se for o padrão do Lovable.
+Use uma stack web moderna (React + TypeScript).
 
 Não precisa criar backend.
 
@@ -559,23 +557,14 @@ Depois de implementar, revise toda a experiência e corrija problemas de respons
 
 Não adicione login, cadastro, banco de dados, painel administrativo ou qualquer outra funcionalidade que não foi solicitada.
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/a4a59444-2933-4148-b3ec-fff2d27ed0ec).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+You need Node.js **20.19+** (or Bun) — [install Node with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
 ```sh
+nvm use   # usa a versão do .nvmrc
 git clone <this-repository-url>
 cd <repository-name>
-npm i
+npm install
 npm run dev
 ```

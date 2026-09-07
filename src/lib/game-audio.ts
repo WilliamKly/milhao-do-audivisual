@@ -1,201 +1,240 @@
-// Simple Web Audio API sound layer — all sounds are synthesized, no external files.
+const TRACKS = {
+  intro: "/audio/intro.mp3",
+  question: "/audio/question.mp3",
+  correct: "/audio/correct.mp3",
+  wrong: "/audio/wrong.mp3",
+} as const;
 
-let ctx: AudioContext | null = null;
-let master: GainNode | null = null;
+type LoopTrack = "intro" | "question";
+type ShotTrack = "correct" | "wrong";
+
 let muted = false;
-let suspenseStop: (() => void) | null = null;
+/** User gesture received — audible playback is allowed. */
+let unlocked = false;
+/** Intro/question is playing muted because the browser blocked audible autoplay. */
+let awaitingUnlock = false;
+const loops = new Map<LoopTrack, HTMLAudioElement>();
+let activeLoop: LoopTrack | null = null;
+let unlockInstalled = false;
+const unlockListeners = new Set<() => void>();
 
-function ac(): AudioContext | null {
-  if (typeof window === "undefined") return null;
-  if (!ctx) {
-    const Ctor =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!Ctor) return null;
-    try {
-      ctx = new Ctor();
-      master = ctx.createGain();
-      master.gain.value = muted ? 0 : 0.5;
-      master.connect(ctx.destination);
-    } catch {
-      ctx = null;
-      master = null;
-      return null;
+function ensureInDom(audio: HTMLAudioElement) {
+  if (typeof document === "undefined") return;
+  if (!audio.isConnected) {
+    audio.setAttribute("aria-hidden", "true");
+    audio.style.cssText = "position:fixed;width:0;height:0;opacity:0;pointer-events:none";
+    document.body.appendChild(audio);
+  }
+}
+
+function createAudio(src: string, loop = false): HTMLAudioElement {
+  const audio = document.createElement("audio");
+  audio.src = src;
+  audio.loop = loop;
+  audio.preload = "auto";
+  audio.playsInline = true;
+  audio.setAttribute("playsinline", "");
+  audio.setAttribute("webkit-playsinline", "");
+  ensureInDom(audio);
+  return audio;
+}
+
+function syncVolume(audio: HTMLAudioElement) {
+  audio.volume = muted ? 0 : 0.85;
+  audio.muted = muted || (!unlocked && awaitingUnlock);
+}
+
+function getLoop(track: LoopTrack): HTMLAudioElement {
+  let audio = loops.get(track);
+  if (!audio) {
+    audio = createAudio(TRACKS[track], true);
+    loops.set(track, audio);
+  } else {
+    ensureInDom(audio);
+  }
+  return audio;
+}
+
+function stopLoop(track: LoopTrack) {
+  const audio = loops.get(track);
+  if (!audio) return;
+  audio.pause();
+  try {
+    audio.currentTime = 0;
+  } catch {
+    /* ignore */
+  }
+  if (activeLoop === track) activeLoop = null;
+}
+
+function stopAllLoops() {
+  for (const track of loops.keys()) stopLoop(track);
+}
+
+function notifyUnlockListeners() {
+  for (const listener of unlockListeners) listener();
+}
+
+async function playLoop(track: LoopTrack) {
+  if (typeof window === "undefined") return;
+
+  installUnlockListeners();
+
+  const audio = getLoop(track);
+
+  // Already playing this track — don't restart (avoids Strict Mode flicker).
+  if (activeLoop === track && !audio.paused) {
+    syncVolume(audio);
+    return;
+  }
+
+  for (const other of loops.keys()) {
+    if (other !== track) stopLoop(other);
+  }
+
+  activeLoop = track;
+  audio.volume = muted ? 0 : 0.85;
+
+  // Prefer muted start first — browsers allow muted autoplay without a gesture.
+  // Then try to unmute; if the policy blocks it, keep muted until unlockAudio().
+  audio.muted = true;
+  try {
+    await audio.play();
+  } catch {
+    awaitingUnlock = !muted;
+    notifyUnlockListeners();
+    return;
+  }
+
+  if (muted) {
+    awaitingUnlock = false;
+    notifyUnlockListeners();
+    return;
+  }
+
+  audio.muted = false;
+  // If the browser forces mute back / blocks audible output, stay in unlock mode.
+  // Reading muted after a microtask catches policies that re-mute.
+  await Promise.resolve();
+  if (audio.muted) {
+    awaitingUnlock = true;
+  } else {
+    unlocked = true;
+    awaitingUnlock = false;
+  }
+  notifyUnlockListeners();
+}
+
+function installUnlockListeners() {
+  if (typeof window === "undefined" || unlockInstalled) return;
+  unlockInstalled = true;
+
+  const onGesture = () => {
+    unlockAudio();
+  };
+
+  window.addEventListener("pointerdown", onGesture, { capture: true });
+  window.addEventListener("touchstart", onGesture, { capture: true });
+  window.addEventListener("keydown", onGesture, { capture: true });
+}
+
+export function onAudioUnlockChange(listener: () => void) {
+  unlockListeners.add(listener);
+  return () => unlockListeners.delete(listener);
+}
+
+/** Call after any user gesture to enable audible playback. */
+export function unlockAudio() {
+  if (typeof window === "undefined") return;
+
+  unlocked = true;
+  awaitingUnlock = false;
+
+  for (const audio of loops.values()) {
+    syncVolume(audio);
+    if (audio.paused && activeLoop && loops.get(activeLoop) === audio) {
+      void audio.play().catch(() => {});
     }
   }
-  return ctx;
+
+  notifyUnlockListeners();
 }
 
 export function initAudio() {
-  try {
-    const c = ac();
-    if (c && c.state === "suspended") void c.resume();
-  } catch {
-    /* audio unavailable */
-  }
+  unlockAudio();
 }
 
 export function setMuted(value: boolean) {
   muted = value;
-  if (master && ctx) {
-    master.gain.setTargetAtTime(muted ? 0 : 0.5, ctx.currentTime, 0.02);
-  }
+  if (value) awaitingUnlock = false;
+  for (const audio of loops.values()) syncVolume(audio);
+  notifyUnlockListeners();
 }
 
 export function isMuted() {
   return muted;
 }
 
-type ToneOpts = {
-  freq: number;
-  start?: number;
-  dur?: number;
-  type?: OscillatorType;
-  gain?: number;
-  sweepTo?: number;
-};
+export function isAudioUnlocked() {
+  return unlocked;
+}
 
-function tone({
-  freq,
-  start = 0,
-  dur = 0.2,
-  type = "sine",
-  gain = 0.3,
-  sweepTo,
-}: ToneOpts) {
-  const c = ac();
-  if (!c || !master) return;
+export function needsAudioUnlock() {
+  return awaitingUnlock && !muted && !unlocked;
+}
+
+export async function playIntroLoop() {
+  await playLoop("intro");
+}
+
+export function stopIntro() {
+  stopLoop("intro");
+}
+
+export async function playQuestionLoop() {
+  await playLoop("question");
+}
+
+export function stopQuestion() {
+  stopLoop("question");
+}
+
+export function stopAll() {
+  stopAllLoops();
+}
+
+async function playOneShot(track: ShotTrack) {
+  if (typeof window === "undefined") return;
+  stopAllLoops();
+  unlockAudio();
+
+  const audio = createAudio(TRACKS[track], false);
+  audio.volume = muted ? 0 : 0.85;
+  audio.muted = muted;
+
   try {
-  const t = c.currentTime + start;
-  const osc = c.createOscillator();
-  const g = c.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  if (sweepTo) osc.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.015);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g);
-  g.connect(master);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
+    await audio.play();
   } catch {
-    /* audio unavailable */
-  }
-}
-
-export function playQuestionIn() {
-  initAudio();
-  tone({ freq: 220, dur: 0.5, type: "triangle", gain: 0.22, sweepTo: 660 });
-  tone({ freq: 440, start: 0.12, dur: 0.4, type: "sine", gain: 0.15 });
-}
-
-export function playSelect() {
-  initAudio();
-  tone({ freq: 880, dur: 0.12, type: "square", gain: 0.12 });
-  tone({ freq: 1320, start: 0.06, dur: 0.12, type: "square", gain: 0.08 });
-}
-
-export function playSuspense(duration = 2.4) {
-  initAudio();
-  const c = ac();
-  if (!c || !master) return () => {};
-  stopSuspense();
-  const t0 = c.currentTime;
-
-  let drone: OscillatorNode;
-  let droneGain: GainNode;
-  try {
-    drone = c.createOscillator();
-    droneGain = c.createGain();
-    drone.type = "sawtooth";
-    drone.frequency.setValueAtTime(70, t0);
-    drone.frequency.linearRampToValueAtTime(110, t0 + duration);
-    droneGain.gain.setValueAtTime(0.0001, t0);
-    droneGain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.3);
-    droneGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    drone.connect(droneGain);
-    droneGain.connect(master);
-    drone.start(t0);
-    drone.stop(t0 + duration + 0.1);
-  } catch {
-    return () => {};
+    /* blocked */
   }
 
-
-  // Ticking heartbeat, accelerating
-  let time = 0;
-  let i = 0;
-  while (time < duration) {
-    tone({
-      freq: 160 + i * 8,
-      start: time,
-      dur: 0.09,
-      type: "triangle",
-      gain: 0.18,
-    });
-    time += Math.max(0.16, 0.42 - i * 0.03);
-    i++;
-  }
-
-  suspenseStop = () => {
-    try {
-      droneGain.gain.cancelScheduledValues(c.currentTime);
-      droneGain.gain.setTargetAtTime(0.0001, c.currentTime, 0.05);
-      drone.stop(c.currentTime + 0.2);
-    } catch {
-      /* already stopped */
-    }
-  };
-  return suspenseStop;
-}
-
-export function stopSuspense() {
-  if (suspenseStop) {
-    suspenseStop();
-    suspenseStop = null;
-  }
+  audio.addEventListener(
+    "ended",
+    () => {
+      audio.remove();
+    },
+    { once: true },
+  );
 }
 
 export function playCorrect() {
-  stopSuspense();
-  initAudio();
-  const notes = [523.25, 659.25, 783.99, 1046.5];
-  notes.forEach((f, i) =>
-    tone({ freq: f, start: i * 0.1, dur: 0.5, type: "triangle", gain: 0.28 }),
-  );
+  void playOneShot("correct");
 }
 
 export function playWrong() {
-  stopSuspense();
-  initAudio();
-  tone({ freq: 320, dur: 0.8, type: "sawtooth", gain: 0.25, sweepTo: 80 });
-  tone({ freq: 150, start: 0.05, dur: 0.7, type: "square", gain: 0.15 });
-}
-
-export function playNext() {
-  initAudio();
-  tone({ freq: 600, dur: 0.18, type: "sine", gain: 0.18, sweepTo: 1200 });
+  void playOneShot("wrong");
 }
 
 export function playVictory() {
-  stopSuspense();
-  initAudio();
-  const melody = [
-    [523.25, 0],
-    [659.25, 0.14],
-    [783.99, 0.28],
-    [1046.5, 0.42],
-    [783.99, 0.6],
-    [1046.5, 0.74],
-    [1318.5, 0.92],
-  ] as const;
-  melody.forEach(([f, t]) =>
-    tone({ freq: f, start: t, dur: 0.6, type: "triangle", gain: 0.3 }),
-  );
-  melody.forEach(([f, t]) =>
-    tone({ freq: f / 2, start: t, dur: 0.6, type: "sine", gain: 0.16 }),
-  );
-  tone({ freq: 130, start: 1.1, dur: 1.6, type: "sawtooth", gain: 0.2 });
+  playCorrect();
 }

@@ -6,16 +6,16 @@ export type Question = {
 };
 
 export const PRIZES = [
-  "R$ 1.000",
-  "R$ 2.000",
-  "R$ 3.000",
-  "R$ 4.000",
-  "R$ 5.000",
-  "R$ 10.000",
-  "R$ 20.000",
-  "R$ 50.000",
-  "R$ 100.000",
-  "R$ 1.000.000",
+  "1 pt",
+  "2 pts",
+  "3 pts",
+  "4 pts",
+  "5 pts",
+  "6 pts",
+  "7 pts",
+  "8 pts",
+  "9 pts",
+  "10 pts",
 ] as const;
 
 export const questions: Question[] = [

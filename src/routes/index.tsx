@@ -3,7 +3,7 @@ import { QuizGame } from "@/components/QuizGame";
 
 const title = "Desafio do Patrimônio Audiovisual — Jogo de Perguntas";
 const description =
-  "Jogo de perguntas e respostas em estilo game show sobre patrimônio audiovisual: 10 perguntas, suspense, som e a escada até R$ 1.000.000.";
+  "Jogo de perguntas e respostas em estilo game show sobre patrimônio audiovisual: 10 perguntas, 1 pt cada, suspense e som.";
 
 export const Route = createFileRoute("/")({
   head: () => ({
