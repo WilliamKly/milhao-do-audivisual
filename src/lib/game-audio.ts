@@ -13,17 +13,27 @@ function ac(): AudioContext | null {
       (window as unknown as { webkitAudioContext?: typeof AudioContext })
         .webkitAudioContext;
     if (!Ctor) return null;
-    ctx = new Ctor();
-    master = ctx.createGain();
-    master.gain.value = muted ? 0 : 0.5;
-    master.connect(ctx.destination);
+    try {
+      ctx = new Ctor();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : 0.5;
+      master.connect(ctx.destination);
+    } catch {
+      ctx = null;
+      master = null;
+      return null;
+    }
   }
   return ctx;
 }
 
 export function initAudio() {
-  const c = ac();
-  if (c && c.state === "suspended") void c.resume();
+  try {
+    const c = ac();
+    if (c && c.state === "suspended") void c.resume();
+  } catch {
+    /* audio unavailable */
+  }
 }
 
 export function setMuted(value: boolean) {
@@ -56,6 +66,7 @@ function tone({
 }: ToneOpts) {
   const c = ac();
   if (!c || !master) return;
+  try {
   const t = c.currentTime + start;
   const osc = c.createOscillator();
   const g = c.createGain();
@@ -69,6 +80,9 @@ function tone({
   g.connect(master);
   osc.start(t);
   osc.stop(t + dur + 0.05);
+  } catch {
+    /* audio unavailable */
+  }
 }
 
 export function playQuestionIn() {
