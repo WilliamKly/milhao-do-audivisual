@@ -16,7 +16,7 @@ export function QuizGame() {
   const [muted, setMutedState] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const current = questions[index];
+  const current = questions[index]!;
   const correct = current.correctAnswer;
   const wonPrize = index > 0 ? PRIZES[index - 1] : null;
 
