@@ -104,18 +104,25 @@ export function playSuspense(duration = 2.4) {
   stopSuspense();
   const t0 = c.currentTime;
 
-  const drone = c.createOscillator();
-  const droneGain = c.createGain();
-  drone.type = "sawtooth";
-  drone.frequency.setValueAtTime(70, t0);
-  drone.frequency.linearRampToValueAtTime(110, t0 + duration);
-  droneGain.gain.setValueAtTime(0.0001, t0);
-  droneGain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.3);
-  droneGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-  drone.connect(droneGain);
-  droneGain.connect(master);
-  drone.start(t0);
-  drone.stop(t0 + duration + 0.1);
+  let drone: OscillatorNode;
+  let droneGain: GainNode;
+  try {
+    drone = c.createOscillator();
+    droneGain = c.createGain();
+    drone.type = "sawtooth";
+    drone.frequency.setValueAtTime(70, t0);
+    drone.frequency.linearRampToValueAtTime(110, t0 + duration);
+    droneGain.gain.setValueAtTime(0.0001, t0);
+    droneGain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.3);
+    droneGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    drone.connect(droneGain);
+    droneGain.connect(master);
+    drone.start(t0);
+    drone.stop(t0 + duration + 0.1);
+  } catch {
+    return () => {};
+  }
+
 
   // Ticking heartbeat, accelerating
   let time = 0;
